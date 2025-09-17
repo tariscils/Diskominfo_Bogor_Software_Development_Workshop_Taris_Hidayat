@@ -373,3 +373,6 @@ Untuk pertanyaan atau bantuan:
 ---
 
 **Workshop-Friendly System** - Dibuat untuk memudahkan pembelajaran dan workshop development dengan struktur yang bersih dan dokumentasi yang lengkap.
+#   D i s k o m i n f o _ B o g o r _ S o f t w a r e _ D e v e l o p m e n t _ W o r k s h o p _ T a r i s _ H i d a y a t  
+ #   D i s k o m i n f o _ B o g o r _ S o f t w a r e _ D e v e l o p m e n t _ W o r k s h o p _ T a r i s _ H i d a y a t  
+ 
