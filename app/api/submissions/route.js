@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { Submission, NotificationLog, initializeDatabase } from "@/lib/sequelize";
+import { Op } from "sequelize";
 import { normalizePhoneNumber } from "@/lib/phone";
 import { sendInitialSubmissionNotification } from "@/lib/notify/sicuba";
 
@@ -16,117 +17,153 @@ export async function GET(request) {
   try {
     await initDB();
 
-    // In a real application, you would verify admin authentication here
-    // For workshop purposes, we'll skip authentication
-
-    // Parse cache-busting query parameters
+    // Parse query parameters
     const url = new URL(request.url);
-    const queryTimestamp = url.searchParams.get("t");
-    const queryRandom = url.searchParams.get("r");
-    const queryForce = url.searchParams.get("force");
-    const queryCacheBuster = url.searchParams.get("cb");
+    const {
+      q: searchQuery,
+      sort,
+      order = "DESC",
+      page = "1",
+      limit = "10",
+      status
+    } = Object.fromEntries(url.searchParams);
 
-    // Force fresh data dengan multiple strategies
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(7);
-    const forceRefresh = Date.now();
+    console.log(`[${new Date().toISOString()}] Fetching submissions with params:`, {
+      searchQuery,
+      sort,
+      order,
+      page,
+      limit,
+      status
+    });
 
-    console.log(
-      `[${new Date().toISOString()}] Fetching submissions with force refresh: ${timestamp}-${random}-${forceRefresh}`
-    );
-    console.log(
-      `[${new Date().toISOString()}] Query params: t=${queryTimestamp}, r=${queryRandom}, force=${queryForce}, cb=${queryCacheBuster}`
-    );
+    // Build where clause for search
+    const whereClause = {};
+    
+    // Search by name or email
+    if (searchQuery && searchQuery.trim()) {
+      whereClause[Op.or] = [
+        {
+          nama: {
+            [Op.iLike]: `%${searchQuery.trim()}%`
+          }
+        },
+        {
+          email: {
+            [Op.iLike]: `%${searchQuery.trim()}%`
+          }
+        },
+        {
+          tracking_code: {
+            [Op.iLike]: `%${searchQuery.trim()}%`
+          }
+        }
+      ];
+    }
 
-    // Force fresh query dengan random order strategy
-    const randomOrder = Math.random() > 0.5 ? "ASC" : "DESC";
-    console.log(
-      `[${new Date().toISOString()}] Using random order: ${randomOrder}`
-    );
+    // Filter by status
+    if (status && status.trim()) {
+      whereClause.status = status.trim().toUpperCase();
+    }
 
+    // Build order clause
+    let orderClause = [["created_at", "DESC"]]; // Default order
+    
+    if (sort) {
+      const validSortFields = ["createdAt", "status", "nama", "email"];
+      const validSortField = validSortFields.find(field => 
+        sort.toLowerCase() === field.toLowerCase() ||
+        sort.toLowerCase() === field.replace(/([A-Z])/g, '_$1').toLowerCase()
+      );
+      
+      if (validSortField) {
+        const dbField = validSortField === "createdAt" ? "created_at" : 
+                       validSortField === "nama" ? "nama" :
+                       validSortField === "email" ? "email" :
+                       validSortField;
+        
+        const validOrder = ["ASC", "DESC"].includes(order.toUpperCase()) ? 
+                          order.toUpperCase() : "DESC";
+        
+        orderClause = [[dbField, validOrder]];
+      }
+    }
+
+    // Parse pagination
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 10));
+    const offset = (pageNum - 1) * limitNum;
+
+    // Get total count for pagination
+    const totalCount = await Submission.count({ where: whereClause });
+
+    // Fetch submissions with pagination
     const submissions = await Submission.findAll({
-      order: [["created_at", randomOrder]], // Random order untuk force fresh query
+      where: whereClause,
+      order: orderClause,
+      limit: limitNum,
+      offset: offset,
       attributes: [
         "id",
         "tracking_code",
         "nama",
+        "email",
         "jenis_layanan",
         "status",
         "created_at",
         "updated_at",
       ],
-      // Force fresh data
-      raw: false,
-      // Add random parameter to force fresh query
-      logging: console.log,
     });
 
-    console.log(
-      `[${new Date().toISOString()}] Found ${submissions.length} submissions`
-    );
-    if (submissions.length > 0) {
-      console.log(
-        `[${new Date().toISOString()}] Latest submission: ${
-          submissions[0].tracking_code
-        } (${submissions[0].status})`
-      );
-    }
+    // Calculate pagination info
+    const totalPages = Math.ceil(totalCount / limitNum);
+    const hasNextPage = pageNum < totalPages;
+    const hasPrevPage = pageNum > 1;
 
-    // Vercel-specific no-cache headers
-    const response = NextResponse.json(submissions);
+    console.log(`[${new Date().toISOString()}] Found ${submissions.length} submissions (${totalCount} total)`);
 
-    // Ultra-aggressive cache control
+    // Build response
+    const responseData = {
+      success: true,
+      data: submissions,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalCount,
+        limit: limitNum,
+        hasNextPage,
+        hasPrevPage,
+        nextPage: hasNextPage ? pageNum + 1 : null,
+        prevPage: hasPrevPage ? pageNum - 1 : null,
+      },
+      filters: {
+        search: searchQuery || null,
+        status: status || null,
+        sort: sort || "createdAt",
+        order: order.toUpperCase(),
+      }
+    };
+
+    const response = NextResponse.json(responseData);
+
+    // Set cache headers
     response.headers.set(
       "Cache-Control",
-      "no-cache, no-store, must-revalidate, private, max-age=0, s-maxage=0, stale-while-revalidate=0"
-    );
-    response.headers.set("Pragma", "no-cache");
-    response.headers.set("Expires", "0");
-    response.headers.set("Clear-Site-Data", '"cache"');
-
-    // Vercel-specific headers
-    response.headers.set("Surrogate-Control", "no-store");
-    response.headers.set("CDN-Cache-Control", "no-cache");
-    response.headers.set("Vercel-CDN-Cache-Control", "no-cache");
-    response.headers.set("X-Vercel-Cache", "MISS");
-
-    // Force fresh response dengan dynamic values dan query params
-    response.headers.set("Last-Modified", new Date().toUTCString());
-    response.headers.set(
-      "ETag",
-      `"${timestamp}-${random}-${forceRefresh}-${queryTimestamp}-${queryRandom}"`
-    );
-    response.headers.set("X-Response-Time", `${Date.now()}`);
-    response.headers.set(
-      "X-Cache-Buster",
-      `${timestamp}-${random}-${queryCacheBuster}`
-    );
-    response.headers.set("X-Force-Refresh", "true");
-    response.headers.set(
-      "X-Query-Params",
-      `${queryTimestamp}-${queryRandom}-${queryForce}`
+      "private, max-age=30, stale-while-revalidate=60"
     );
 
     return response;
   } catch (error) {
     console.error("Error fetching submissions:", error);
 
-    const errorResponse = NextResponse.json(
-      { message: "Terjadi kesalahan internal server" },
+    return NextResponse.json(
+      { 
+        success: false,
+        message: "Terjadi kesalahan internal server",
+        error: process.env.NODE_ENV === "development" ? error.message : undefined
+      },
       { status: 500 }
     );
-
-    // Same headers for errors
-    errorResponse.headers.set(
-      "Cache-Control",
-      "no-cache, no-store, must-revalidate, private"
-    );
-    errorResponse.headers.set("Pragma", "no-cache");
-    errorResponse.headers.set("Expires", "0");
-    errorResponse.headers.set("Surrogate-Control", "no-store");
-    errorResponse.headers.set("CDN-Cache-Control", "no-cache");
-
-    return errorResponse;
   }
 }
 

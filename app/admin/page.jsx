@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Table, Select, message, Card, Row, Col } from "antd";
+import { Table, Select, message, Card, Row, Col, Input, Button, Space } from "antd";
 import {
   PieChart,
   Pie,
@@ -11,6 +11,7 @@ import {
   Legend,
   Tooltip,
 } from "recharts";
+import { SearchOutlined, ReloadOutlined } from "@ant-design/icons";
 
 const { Option } = Select;
 
@@ -22,6 +23,15 @@ export default function AdminDashboard() {
   const [chartData, setChartData] = useState([]);
   const [updatingStatus, setUpdatingStatus] = useState({}); // Track which submission is being updated
   const [refreshing, setRefreshing] = useState(false); // Track refresh loading state
+  
+  // New state for search and sort
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortField, setSortField] = useState("createdAt");
+  const [sortOrder, setSortOrder] = useState("DESC");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   const COLORS = ["#ffc107", "#1890ff", "#52c41a", "#ff4d4f"];
 
@@ -43,48 +53,57 @@ export default function AdminDashboard() {
     setTimeout(checkAuth, 100);
   }, [router]);
 
-  const fetchSubmissions = async (showLoading = false) => {
+  const fetchSubmissions = async (showLoading = false, searchParams = {}) => {
     if (showLoading) {
       setRefreshing(true);
     }
+    setSearchLoading(true);
 
     try {
-      // Ultra-aggressive cache bypass
-      const timestamp = Date.now();
-      const random = Math.random().toString(36).substring(7);
-      const forceRefresh = Date.now();
-      const cacheBuster = Math.random().toString(36).substring(7);
+      // Build query parameters
+      const params = new URLSearchParams();
+      
+      // Use provided searchParams or current state
+      const query = searchParams.q !== undefined ? searchParams.q : searchQuery;
+      const sort = searchParams.sort !== undefined ? searchParams.sort : sortField;
+      const order = searchParams.order !== undefined ? searchParams.order : sortOrder;
+      const page = searchParams.page !== undefined ? searchParams.page : currentPage;
+      const limit = searchParams.limit !== undefined ? searchParams.limit : pageSize;
+      const status = searchParams.status !== undefined ? searchParams.status : (statusFilter === "ALL" ? "" : statusFilter);
 
-      const response = await fetch(
-        `/api/admin/submissions?t=${timestamp}&r=${random}&force=${forceRefresh}&cb=${cacheBuster}&_=${Date.now()}`,
-        {
-          headers: {
-            "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
-            Pragma: "no-cache",
-            "X-Requested-With": "XMLHttpRequest",
-            "X-Force-Refresh": "true",
-            "X-Cache-Buster": `${timestamp}-${random}`,
-            "X-Request-Time": `${Date.now()}`,
-          },
-          // Force fresh request
-          cache: "no-store",
-        }
-      );
+      if (query) params.append("q", query);
+      if (sort) params.append("sort", sort);
+      if (order) params.append("order", order);
+      if (page) params.append("page", page.toString());
+      if (limit) params.append("limit", limit.toString());
+      if (status) params.append("status", status);
+
+      const response = await fetch(`/api/submissions?${params.toString()}`, {
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate, max-age=0",
+          Pragma: "no-cache",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        cache: "no-store",
+      });
+      
       const data = await response.json();
 
-      if (response.ok) {
-        setSubmissions(data);
-        updateChartData(data);
+      if (response.ok && data.success) {
+        setSubmissions(data.data);
+        setTotalCount(data.pagination.totalCount);
+        updateChartData(data.data);
         if (showLoading) {
           message.success("Data berhasil diperbarui");
         }
       } else {
-        message.error("Gagal memuat data pengajuan");
+        message.error(data.message || "Gagal memuat data pengajuan");
       }
     } catch (error) {
       message.error("Terjadi kesalahan jaringan");
     } finally {
       setLoading(false);
+      setSearchLoading(false);
       if (showLoading) {
         setRefreshing(false);
       }
@@ -93,7 +112,62 @@ export default function AdminDashboard() {
 
   // Simple refresh function
   const handleRefresh = () => {
+    setCurrentPage(1);
     fetchSubmissions(true);
+  };
+
+  // Handle search
+  const handleSearch = (value) => {
+    setSearchQuery(value);
+    setCurrentPage(1);
+    fetchSubmissions(false, { 
+      q: value, 
+      sort: sortField, 
+      order: sortOrder, 
+      page: 1, 
+      status: statusFilter === "ALL" ? "" : statusFilter 
+    });
+  };
+
+  // Handle sort change
+  const handleSortChange = (field, order) => {
+    setSortField(field);
+    setSortOrder(order);
+    setCurrentPage(1);
+    fetchSubmissions(false, { 
+      q: searchQuery, 
+      sort: field, 
+      order: order, 
+      page: 1, 
+      status: statusFilter === "ALL" ? "" : statusFilter 
+    });
+  };
+
+  // Handle status filter change
+  const handleStatusFilterChange = (value) => {
+    setStatusFilter(value);
+    setCurrentPage(1);
+    fetchSubmissions(false, { 
+      q: searchQuery, 
+      sort: sortField, 
+      order: sortOrder, 
+      page: 1, 
+      status: value === "ALL" ? "" : value 
+    });
+  };
+
+  // Handle pagination change
+  const handlePageChange = (page, size) => {
+    setCurrentPage(page);
+    setPageSize(size);
+    fetchSubmissions(false, { 
+      q: searchQuery, 
+      sort: sortField, 
+      order: sortOrder, 
+      page: page, 
+      limit: size,
+      status: statusFilter === "ALL" ? "" : statusFilter 
+    });
   };
 
   const updateChartData = (data) => {
@@ -146,36 +220,17 @@ export default function AdminDashboard() {
 
       if (response.ok) {
         message.success("Status berhasil diupdate");
-        // Extended loading state untuk memastikan data ter-update
-        // Keep loading for 2.5 seconds to ensure data is fresh
+        // Refresh data after status update
         setTimeout(() => {
-          // Force refresh dengan cache bypass yang lebih agresif
-          const forceTimestamp = Date.now();
-          const forceRandom = Math.random().toString(36).substring(7);
-          const forceCacheBuster = Math.random().toString(36).substring(7);
-
-          // Multiple refresh attempts dengan delay yang lebih lama
-          fetchSubmissions(true);
-
-          // Additional force refresh after 1.5 seconds
-          setTimeout(() => {
-            fetch(
-              `/api/admin/submissions?force=${forceTimestamp}&r=${forceRandom}&cb=${forceCacheBuster}&_=${Date.now()}`,
-              {
-                headers: {
-                  "Cache-Control":
-                    "no-cache, no-store, must-revalidate, max-age=0",
-                  "X-Force-Refresh": "true",
-                  "X-Cache-Buster": `${forceTimestamp}-${forceRandom}`,
-                },
-                cache: "no-store",
-              }
-            ).then(() => {
-              // Final refresh
-              fetchSubmissions(true);
-            });
-          }, 1500); // Increased delay to 1.5 seconds
-        }, 1000); // Increased initial delay to 1 second
+          fetchSubmissions(true, { 
+            q: searchQuery, 
+            sort: sortField, 
+            order: sortOrder, 
+            page: currentPage, 
+            limit: pageSize,
+            status: statusFilter === "ALL" ? "" : statusFilter 
+          });
+        }, 500);
       } else {
         const error = await response.json();
         message.error(error.message || "Gagal mengupdate status");
@@ -225,6 +280,23 @@ export default function AdminDashboard() {
             title={text}
           >
             {text}
+          </span>
+        </div>
+      ),
+    },
+    {
+      title: "Email",
+      dataIndex: "email",
+      key: "email",
+      width: 150,
+      responsive: ["lg"],
+      render: (text) => (
+        <div className="max-w-[120px] sm:max-w-[150px]">
+          <span
+            className="text-xs sm:text-sm break-words leading-tight"
+            title={text}
+          >
+            {text || "-"}
           </span>
         </div>
       ),
@@ -358,10 +430,7 @@ export default function AdminDashboard() {
     },
   ];
 
-  const filteredSubmissions =
-    statusFilter === "ALL"
-      ? submissions
-      : submissions.filter((sub) => sub.status === statusFilter);
+  // No need for client-side filtering since API handles it
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -530,7 +599,7 @@ export default function AdminDashboard() {
                   </div>
                 ) : (
                   <div className="text-lg sm:text-2xl font-bold text-blue-600">
-                    {submissions.length}
+                    {totalCount}
                   </div>
                 )}
                 <div className="text-sm sm:text-base text-gray-600">
@@ -738,43 +807,97 @@ export default function AdminDashboard() {
 
         {/* Table */}
         <Card title="Daftar Pengajuan">
-          <div className="mb-4">
-            <Select
-              value={statusFilter}
-              onChange={setStatusFilter}
-              style={{ width: "100%", maxWidth: 200 }}
-              placeholder="Filter by status"
-              disabled={loading || Object.values(updatingStatus).some(Boolean)}
-              loading={loading}
-            >
-              <Option value="ALL">Semua Status</Option>
-              <Option value="PENGAJUAN_BARU">Pengajuan Baru</Option>
-              <Option value="DIPROSES">Sedang Diproses</Option>
-              <Option value="SELESAI">Selesai</Option>
-              <Option value="DITOLAK">Ditolak</Option>
-            </Select>
-            {loading && (
-              <span className="ml-2 text-xs sm:text-sm text-gray-500">
-                Memuat data...
-              </span>
-            )}
+          {/* Search and Filter Controls */}
+          <div className="mb-4 space-y-3">
+            <div className="flex flex-col sm:flex-row gap-3">
+              {/* Search Input */}
+              <div className="flex-1">
+                <Input.Search
+                  placeholder="Cari berdasarkan nama, email, atau tracking code..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onSearch={handleSearch}
+                  enterButton={<SearchOutlined />}
+                  loading={searchLoading}
+                  disabled={loading || Object.values(updatingStatus).some(Boolean)}
+                  size="middle"
+                />
+              </div>
+              
+              {/* Sort Controls */}
+              <div className="flex gap-2">
+                <Select
+                  value={sortField}
+                  onChange={(value) => handleSortChange(value, sortOrder)}
+                  style={{ minWidth: 120 }}
+                  disabled={loading || Object.values(updatingStatus).some(Boolean)}
+                  size="middle"
+                >
+                  <Option value="createdAt">Tanggal Dibuat</Option>
+                  <Option value="status">Status</Option>
+                  <Option value="nama">Nama</Option>
+                  <Option value="email">Email</Option>
+                </Select>
+                
+                <Select
+                  value={sortOrder}
+                  onChange={(value) => handleSortChange(sortField, value)}
+                  style={{ minWidth: 80 }}
+                  disabled={loading || Object.values(updatingStatus).some(Boolean)}
+                  size="middle"
+                >
+                  <Option value="DESC">↓ Desc</Option>
+                  <Option value="ASC">↑ Asc</Option>
+                </Select>
+              </div>
+            </div>
+            
+            {/* Status Filter */}
+            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+              <Select
+                value={statusFilter}
+                onChange={handleStatusFilterChange}
+                style={{ minWidth: 150 }}
+                placeholder="Filter by status"
+                disabled={loading || Object.values(updatingStatus).some(Boolean)}
+                loading={loading}
+                size="middle"
+              >
+                <Option value="ALL">Semua Status</Option>
+                <Option value="PENGAJUAN_BARU">Pengajuan Baru</Option>
+                <Option value="DIPROSES">Sedang Diproses</Option>
+                <Option value="SELESAI">Selesai</Option>
+                <Option value="DITOLAK">Ditolak</Option>
+              </Select>
+              
+              {loading && (
+                <span className="text-xs sm:text-sm text-gray-500">
+                  Memuat data...
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="relative">
             <Table
               columns={columns}
-              dataSource={filteredSubmissions}
+              dataSource={submissions}
               rowKey="id"
-              loading={loading}
+              loading={loading || searchLoading}
               scroll={{ x: 800, y: 400 }}
               pagination={{
-                pageSize: 10,
-                showSizeChanger: false,
-                showQuickJumper: false,
+                current: currentPage,
+                pageSize: pageSize,
+                total: totalCount,
+                showSizeChanger: true,
+                showQuickJumper: true,
                 showTotal: (total, range) =>
                   `${range[0]}-${range[1]} dari ${total} pengajuan`,
                 size: "small",
                 responsive: true,
+                pageSizeOptions: ['10', '20', '50', '100'],
+                onChange: handlePageChange,
+                onShowSizeChange: handlePageChange,
               }}
               size="small"
               className="responsive-table"
