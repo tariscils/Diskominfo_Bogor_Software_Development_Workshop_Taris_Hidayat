@@ -73,8 +73,18 @@ export async function PATCH(request, { params }) {
       );
     }
 
-    // Update status
+    // Enforce forward-only transitions: PENGAJUAN_BARU -> DIPROSES -> SELESAI
     const oldStatus = submission.status;
+    const order = ["PENGAJUAN_BARU", "DIPROSES", "SELESAI"];
+    const oldIdx = order.indexOf(oldStatus);
+    const newIdx = order.indexOf(status);
+    if (oldIdx !== -1 && newIdx !== -1 && newIdx < oldIdx) {
+      return NextResponse.json(
+        { message: "Status tidak boleh mundur (rollback)" },
+        { status: 400 }
+      );
+    }
+    // Allow staying in the same or going forward; block unknown transitions handled above
     await submission.update({ status });
 
     console.log("Status updated successfully:", oldStatus, "->", status);

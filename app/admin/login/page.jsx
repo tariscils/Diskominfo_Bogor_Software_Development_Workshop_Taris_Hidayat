@@ -13,6 +13,7 @@ export default function AdminLogin() {
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -101,6 +102,9 @@ export default function AdminLogin() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
         <div className="text-center mb-8">
+          <div className="w-full flex justify-center mb-4">
+            <img src="/uciha.png" alt="Uciha" className="h-16 w-16 object-contain" />
+          </div>
           <h1 className="text-3xl font-bold text-gray-800 mb-2">
             Admin Login
           </h1>
@@ -142,18 +146,32 @@ export default function AdminLogin() {
             >
               Password
             </label>
-            <input
-              type="password"
-              id="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              className={`w-full px-3 py-2 border rounded-lg text-black transition duration-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-                errors.password ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300'
-              }`}
-              placeholder="Masukkan password"
-              disabled={isLoading}
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                id="password"
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
+                className={`w-full px-3 py-2 border rounded-lg text-black transition duration-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 pr-10 ${
+                  errors.password ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300'
+                }`}
+                placeholder="Masukkan password"
+                disabled={isLoading}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500 hover:text-gray-700"
+                aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+              >
+                {showPassword ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M4.03 3.97a.75.75 0 011.06 0l11 11a.75.75 0 11-1.06 1.06l-1.86-1.86a9.74 9.74 0 01-3.17 1.16c-3.92.77-7.9-1.4-9.98-4.89a1.75 1.75 0 010-1.8A12.09 12.09 0 015.9 5.06L4.03 3.97zM7.8 7.74l1.27 1.27a2.5 2.5 0 013.92 2.95l1.03 1.03a4 4 0 00-6.22-5.25z"/><path d="M10.56 13.44L7.5 10.38a2.5 2.5 0 003.06 3.06z"/><path d="M10 5c3.92-.77 7.9 1.4 9.98 4.89.3.5.3 1.3 0 1.8-.82 1.36-1.9 2.53-3.13 3.43l-1.07-1.06A8.58 8.58 0 0018.48 10C16.7 7.16 13.38 5.5 10 5z"/></svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 3c-4.18 0-7.9 2.52-9.98 6.11a1.75 1.75 0 000 1.78C2.1 14.48 5.82 17 10 17s7.9-2.52 9.98-6.11a1.75 1.75 0 000-1.78C17.9 5.52 14.18 3 10 3zm0 2c3.38 0 6.7 1.66 8.48 4.5C16.7 12.84 13.38 14.5 10 14.5S3.3 12.84 1.52 9.5C3.3 6.66 6.62 5 10 5zm0 2.5A3 3 0 1010 14a3 3 0 000-6.5z"/></svg>
+                )}
+              </button>
+            </div>
             {errors.password && (
               <p className="mt-1 text-sm text-red-600">{errors.password}</p>
             )}

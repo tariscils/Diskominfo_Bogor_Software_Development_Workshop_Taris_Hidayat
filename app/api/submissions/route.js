@@ -173,12 +173,42 @@ export async function POST(request) {
 
     const body = await request.json();
 
-    // Validate required fields
+    // Validate required fields with detailed errors
     const { nama, nik, email, no_wa, jenis_layanan, consent } = body;
 
-    if (!nama || !nik || !email || !no_wa || !jenis_layanan || !consent) {
+    const errors = {};
+    if (!nama || !nama.trim()) {
+      errors.nama = "Nama lengkap wajib diisi";
+    }
+    if (!nik || !nik.trim()) {
+      errors.nik = "NIK wajib diisi";
+    } else if (!/^\d{16}$/.test(nik)) {
+      errors.nik = "NIK harus 16 digit angka";
+    }
+    if (!email || !email.trim()) {
+      errors.email = "Email wajib diisi";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.email = "Format email tidak valid";
+    }
+    if (!no_wa || !no_wa.trim()) {
+      errors.no_wa = "Nomor WhatsApp wajib diisi";
+    } else if (!/^\d+$/.test(no_wa.replace(/\D/g, ""))) {
+      errors.no_wa = "Nomor WhatsApp harus angka";
+    }
+    if (!jenis_layanan || !jenis_layanan.trim()) {
+      errors.jenis_layanan = "Jenis layanan wajib dipilih";
+    }
+    if (!consent) {
+      errors.consent = "Anda harus menyetujui pemberian notifikasi";
+    }
+
+    if (Object.keys(errors).length > 0) {
       return NextResponse.json(
-        { message: "Semua field harus diisi" },
+        {
+          success: false,
+          message: "Validasi gagal. Periksa isian Anda.",
+          errors,
+        },
         { status: 400 }
       );
     }

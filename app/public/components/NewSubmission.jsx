@@ -42,9 +42,11 @@ export default function NewSubmission() {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    // Enforce numeric only for phone number field
+    const nextValue = name === "no_wa" ? value.replace(/\D/g, "") : value;
     setFormData((prev) => ({
       ...prev,
-      [name]: type === "checkbox" ? checked : value,
+      [name]: type === "checkbox" ? checked : nextValue,
     }));
     // Clear error when user starts typing
     if (errors[name]) {
@@ -67,12 +69,16 @@ export default function NewSubmission() {
       newErrors.nik = "NIK hanya boleh berisi angka";
     }
 
-    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+    if (!formData.email.trim()) {
+      newErrors.email = "Email wajib diisi";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       newErrors.email = "Format email tidak valid";
     }
 
     if (!formData.no_wa.trim()) {
       newErrors.no_wa = "Nomor WhatsApp wajib diisi";
+    } else if (!/^\d+$/.test(formData.no_wa)) {
+      newErrors.no_wa = "Nomor WhatsApp harus angka";
     }
 
     if (!formData.jenis_layanan) {
@@ -188,7 +194,7 @@ export default function NewSubmission() {
             htmlFor="email"
             className="block text-sm font-medium text-gray-700 mb-2"
           >
-            Email (Opsional)
+            Email *
           </label>
           <input
             type="email"
